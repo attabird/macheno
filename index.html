@@ -1,0 +1,1926 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Macheno</title>
+<meta name="description" content="A browser instrument. Plant stars, drums and drones on a night sky. Everything is synthesized live with the Web Audio API.">
+<meta property="og:title" content="Macheno">
+<meta property="og:description" content="A browser instrument. Plant stars, drums and drones on a night sky. Everything is synthesized live.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://attabird.github.io/macheno/og.png">
+<meta property="og:url" content="https://attabird.github.io/macheno/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#060812">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23060812'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23ffb454'/%3E%3Ccircle cx='13.5' cy='13.5' r='2' fill='%23fff' fill-opacity='.55'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --void: #060812;
+    --void-2: #0d1128;
+    --paper: #e8ecf5;
+    --mist: rgba(232,236,245,0.58);
+    --mist-dim: rgba(232,236,245,0.34);
+    --line: rgba(198,210,255,0.5);
+    --hairline: rgba(198,210,255,0.14);
+    --amber: #ffb454;
+    --cyan: #5ee7ff;
+    --rose: #ff6f9c;
+    --violet: #b18aff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+
+  /* Macheno is a single committed nightscape — it does not adapt to light mode. */
+
+  html, body { background: var(--void); }
+
+  .stage{
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 90% at 50% 38%, var(--void-2) 0%, var(--void) 62%, #030409 100%);
+    font-family: var(--mono);
+    color: var(--paper);
+  }
+
+  canvas{
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: crosshair;
+  }
+
+  .hud{
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    pointer-events: none;
+    user-select: none;
+    max-width: 320px;
+  }
+
+  .hud .title{
+    font-size: 13px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--paper);
+    opacity: 0.88;
+    margin: 0 0 8px;
+  }
+
+  /* The controls guide lives in its own panel on the left, slid out of view
+     when hidden so the sky is unobstructed. The live controls (palette, key,
+     grid) stay in the bottom-left HUD and are never hidden with it. */
+  .guide{
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: min(320px, 86vw);
+    max-height: calc(100% - 180px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 20px 18px 24px;
+    background: rgba(6, 8, 18, 0.82);
+    border-right: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    backdrop-filter: blur(9px);
+    -webkit-backdrop-filter: blur(9px);
+    user-select: none;
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease;
+  }
+  .guide.collapsed{
+    transform: translateX(-102%);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .guide.no-anim{ transition: none; }
+  .guide::-webkit-scrollbar{ width: 6px; }
+  .guide::-webkit-scrollbar-thumb{ background: rgba(198,210,255,0.18); border-radius: 3px; }
+
+  .guide-head{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 12px;
+  }
+
+  .guide-head h2{
+    margin: 0;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--mist);
+  }
+
+  .guide-close{
+    background: transparent;
+    border: 1px solid var(--hairline);
+    color: var(--mist-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1;
+    padding: 4px 7px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .guide-close:hover{ color: var(--paper); border-color: var(--line); }
+  .guide-close:focus-visible{ outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+  .help{
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--mist-dim);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .help b{ color: var(--mist); font-weight: 500; }
+
+  .telemetry{
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--mist-dim);
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    gap: 14px;
+  }
+
+  .telemetry span b{ color: var(--mist); font-weight: 500; }
+
+  .pause-indicator{
+    display: none;
+    color: var(--paper);
+    letter-spacing: 0.06em;
+  }
+  .pause-indicator.visible{ display: inline; }
+
+  .palette{
+    pointer-events: auto;
+    display: flex;
+    gap: 9px;
+    margin-top: 14px;
+  }
+
+  .swatch{
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--sw);
+    border: 1px solid rgba(255,255,255,0.18);
+    opacity: 0.75;
+    cursor: pointer;
+    padding: 0;
+    transition: box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+  }
+  .swatch:hover{ transform: scale(1.12); opacity: 0.9; }
+  .swatch.active{
+    opacity: 1;
+    box-shadow: 0 0 0 2px var(--void), 0 0 0 4px var(--sw), 0 0 9px 1px var(--sw);
+  }
+  .swatch:focus-visible{
+    outline: 2px solid var(--paper);
+    outline-offset: 3px;
+  }
+
+  .keyrow{
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+  }
+
+  .keybtn, .chrombtn{
+    background: transparent;
+    border: 1px solid var(--hairline);
+    color: var(--mist-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .keybtn{ padding: 3px 8px; line-height: 1.4; }
+  .chrombtn{ padding: 3px 9px; text-transform: uppercase; letter-spacing: 0.08em; margin-left: 4px; }
+  .keybtn:hover, .chrombtn:hover{
+    color: var(--paper);
+    border-color: var(--line);
+    background: rgba(232,236,245,0.05);
+  }
+  .keybtn:focus-visible, .chrombtn:focus-visible{
+    outline: 2px solid var(--cyan);
+    outline-offset: 2px;
+  }
+  .keylabel{
+    min-width: 18px;
+    text-align: center;
+    color: var(--mist);
+    font-variant-numeric: tabular-nums;
+  }
+  .drumbtn{ margin-left: 0; }
+
+  .chrombtn.active{
+    color: var(--void);
+    background: var(--mist);
+    border-color: var(--mist);
+  }
+
+  .clear-btn{
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: transparent;
+    border: 1px solid var(--hairline);
+    color: var(--mist-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 7px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .clear-btn:hover{
+    color: var(--paper);
+    border-color: var(--line);
+    background: rgba(232,236,245,0.05);
+  }
+  .clear-btn:focus-visible{
+    outline: 2px solid var(--cyan);
+    outline-offset: 2px;
+  }
+
+
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <canvas id="c"></canvas>
+
+  <aside class="guide no-anim" id="guide" aria-label="controls guide">
+    <div class="guide-head">
+      <h2>controls</h2>
+      <button class="guide-close" id="guideClose" type="button" aria-label="hide controls">&times;</button>
+    </div>
+    <ul class="help">
+      <li><b>tap</b> empty sky &mdash; plant a star</li>
+      <li><b>ctrl/cmd+tap</b> empty sky &mdash; plant the selected drum</li>
+      <li><b>7&ndash;9</b> or the kick/snare/hat buttons &mdash; choose which drum you plant next</li>
+      <li><b>drag</b> a drum up/down &mdash; damps it: kick goes big open to tight, snare fat to crisp, hat open to closed; left/right still sets its speed</li>
+      <li><b>tap</b> a star &mdash; start or hush its pattern</li>
+      <li><b>double-tap</b> a star &mdash; remove it</li>
+      <li><b>drag</b> a star &mdash; up/down retunes pitch, left/right changes speed; dragging it around also stretches its sustain</li>
+      <li><b>flick</b> a star (or a selected group) &mdash; throw it; it bounces off the edges with little plucks until it settles</li>
+      <li><b>scroll</b> on a star &mdash; add or remove grain</li>
+      <li><b>shift+drag</b> a star &mdash; raise or lower its volume</li>
+      <li><b>drag</b> empty sky &mdash; select stars and drums, then drag one to move the group</li>
+      <li><b>\</b> &mdash; delete the selection</li>
+      <li><b>m</b> &mdash; mute or unmute the whole selection at once</li>
+      <li><b>space</b> &mdash; pause the beat (sounds already ringing keep their sustain); press again to pick up where it left off</li>
+      <li><b>shift+drag</b> empty sky &mdash; draw a drone note as long as the line, then it repeats (full width holds it constant)</li>
+      <li><b>drag</b> a drone &mdash; up/down retunes it, left/right changes its pulse speed and how slowly it swells in</li>
+      <li><b>scroll</b> on a drone &mdash; speed up or slow down its filter wobble</li>
+      <li><b>alt+scroll</b> on a drone &mdash; shift its filter into a higher or lower register</li>
+      <li><b>shift+drag</b> a drone &mdash; raise or lower its volume</li>
+      <li><b>double-tap</b> a drone &mdash; remove it</li>
+      <li><b>1&ndash;6</b> or the dots below &mdash; choose the next star's color</li>
+      <li><b>grid</b> below &mdash; while on, new or dragged stars/drums snap to the sixteenth-note columns and lock to one 2-second bar; the brighter lines are the four downbeats</li>
+      <li><b>&lt; key &gt;</b> below &mdash; change what key everything plays in; <b>chromatic</b> frees it from any scale</li>
+      <li><b>guide</b> below &mdash; hide or show this panel</li>
+    </ul>
+  </aside>
+
+  <div class="hud">
+    <p class="title">Macheno</p>
+    <div class="telemetry">
+      <span>shapes <b id="n-stars">0</b></span>
+      <span>sounding <b id="n-active">0</b></span>
+      <span id="pauseIndicator" class="pause-indicator">&#10074;&#10074; paused</span>
+    </div>
+    <div class="palette" id="palette" role="group" aria-label="star color">
+      <button class="swatch" type="button" data-idx="0" style="--sw:#ffb454" title="1 — ember, warm pluck"></button>
+      <button class="swatch" type="button" data-idx="1" style="--sw:#5ee7ff" title="2 — mist, airy bell"></button>
+      <button class="swatch" type="button" data-idx="2" style="--sw:#ff6f9c" title="3 — bloom, soft glass"></button>
+      <button class="swatch" type="button" data-idx="3" style="--sw:#b18aff" title="4 — dusk, deep pad"></button>
+      <button class="swatch" type="button" data-idx="4" style="--sw:#7089a3" title="5 — slate, dark low pad"></button>
+      <button class="swatch" type="button" data-idx="5" style="--sw:#b5793f" title="6 — umber, dark growl"></button>
+    </div>
+    <div class="keyrow" role="group" aria-label="key">
+      <button class="keybtn" id="keyPrev" type="button" aria-label="previous key">&#8249;</button>
+      <span class="keylabel" id="keyLabel">D</span>
+      <button class="keybtn" id="keyNext" type="button" aria-label="next key">&#8250;</button>
+      <button class="chrombtn" id="chromToggle" type="button">chromatic</button>
+      <button class="chrombtn" id="gridToggle" type="button">grid</button>
+      <button class="chrombtn" id="guideToggle" type="button" aria-expanded="true" aria-controls="guide">guide</button>
+    </div>
+    <div class="keyrow" role="group" aria-label="drum voice">
+      <button class="chrombtn drumbtn" type="button" data-drum="0">kick</button>
+      <button class="chrombtn drumbtn" type="button" data-drum="1">snare</button>
+      <button class="chrombtn drumbtn" type="button" data-drum="2">hat</button>
+    </div>
+  </div>
+
+  <button class="clear-btn" id="clearBtn" type="button">clear sky</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var clearBtn = document.getElementById('clearBtn');
+  var elStars = document.getElementById('n-stars');
+  var elActive = document.getElementById('n-active');
+  var pauseIndicator = document.getElementById('pauseIndicator');
+  var swatches = Array.prototype.slice.call(document.querySelectorAll('.swatch'));
+  var selectedTimbreIdx = 0;
+
+  function selectSwatch(idx){
+    selectedTimbreIdx = idx;
+    swatches.forEach(function(btn, i){ btn.classList.toggle('active', i === idx); });
+  }
+  swatches.forEach(function(btn, i){
+    btn.addEventListener('click', function(){ selectSwatch(i); });
+  });
+  selectSwatch(0);
+
+  // The guide is documentation, not a control surface, so it hides away and
+  // remembers that choice per viewer. localStorage can throw or come back
+  // empty (private windows, blocked site data), so every access is guarded
+  // and the panel simply defaults to open.
+  var drumButtons = Array.prototype.slice.call(document.querySelectorAll('.drumbtn'));
+  function selectDrum(idx){
+    selectedDrumIdx = idx;
+    drumButtons.forEach(function(btn, i){ btn.classList.toggle('active', i === idx); });
+  }
+  drumButtons.forEach(function(btn, i){
+    btn.addEventListener('click', function(){ selectDrum(i); btn.blur(); });
+  });
+  selectDrum(0);
+
+  var guidePanel = document.getElementById('guide');
+  var guideToggle = document.getElementById('guideToggle');
+  var GUIDE_KEY = 'macheno.guide.open';
+
+  function setGuideOpen(open){
+    guidePanel.classList.toggle('collapsed', !open);
+    guideToggle.classList.toggle('active', open);
+    guideToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    try { localStorage.setItem(GUIDE_KEY, open ? '1' : '0'); } catch (err) {}
+  }
+
+  var guideStartOpen = true;
+  try { guideStartOpen = localStorage.getItem(GUIDE_KEY) !== '0'; } catch (err) {}
+  setGuideOpen(guideStartOpen);
+  requestAnimationFrame(function(){ guidePanel.classList.remove('no-anim'); });
+
+  guideToggle.addEventListener('click', function(){
+    setGuideOpen(guidePanel.classList.contains('collapsed'));
+    guideToggle.blur(); // otherwise space would re-trigger the button instead of pausing
+  });
+  document.getElementById('guideClose').addEventListener('click', function(){ setGuideOpen(false); });
+
+  window.addEventListener('keydown', function(e){
+    var n = parseInt(e.key, 10);
+    if (n >= 1 && n <= swatches.length) selectSwatch(n - 1);
+    if (n >= 7 && n <= 6 + drumButtons.length) selectDrum(n - 7);
+    if (e.key === '\\' && selectedNodes.length){
+      e.preventDefault();
+      var toDelete = selectedNodes.slice();
+      for (var i = 0; i < toDelete.length; i++) deleteNode(toDelete[i]);
+    }
+    if (e.key.toLowerCase() === 'm' && selectedNodes.length){
+      e.preventDefault();
+      toggleSelectedMute();
+    }
+    if (e.code === 'Space' || e.key === ' '){
+      e.preventDefault();
+      togglePause();
+    }
+  });
+
+  // Pausing stops new triggers from being scheduled, but deliberately does
+  // NOT suspend audioCtx — that would cut every in-flight note dead silent
+  // mid-sustain. Instead the clock keeps running so anything already
+  // sounding finishes its natural decay, and on resume every stored
+  // "time until next trigger" is shifted forward by however long the
+  // pause lasted, so nothing skips ahead or catches up early.
+  var paused = false;
+  var pauseStartTime = 0;
+  function togglePause(){
+    paused = !paused;
+    pauseIndicator.classList.toggle('visible', paused);
+    if (paused){
+      pauseStartTime = audioCtx ? audioCtx.currentTime : 0;
+    } else if (audioCtx) {
+      var pauseDuration = audioCtx.currentTime - pauseStartTime;
+      for (var i = 0; i < nodes.length; i++) nodes[i].nextPlayAt += pauseDuration;
+      for (var j = 0; j < drones.length; j++){
+        if (isFinite(drones[j].nextPulseAt)) drones[j].nextPulseAt += pauseDuration;
+      }
+      if (gridStartTime !== null) gridStartTime += pauseDuration;
+      lastPhysicsTime = performance.now();
+      lastBgTime = performance.now();
+    }
+  }
+
+  var W = 0, H = 0;
+  function resize(){
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = canvas.clientWidth;
+    H = canvas.clientHeight;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- music theory ----------
+  var ROOT_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+  var C3 = 130.81;
+  var PENTATONIC_STEPS = [0, 3, 5, 7, 10]; // minor pentatonic, semitone offsets
+  var CHROMATIC_STEPS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  var OCTAVES = 3;
+  var rootIndex = 2;       // D — matches the original fixed root
+  var chromaticMode = false;
+  var ROOT, SCALE;
+
+  // Existing stars re-read SCALE/ROOT fresh on every repeat (see triggerNode),
+  // so changing key or toggling chromatic retunes already-placed stars live —
+  // no need to touch the star objects themselves.
+  function rebuildScale(){
+    ROOT = C3 * Math.pow(2, rootIndex / 12);
+    var steps = chromaticMode ? CHROMATIC_STEPS : PENTATONIC_STEPS;
+    SCALE = [];
+    for (var o = 0; o < OCTAVES; o++){
+      for (var s = 0; s < steps.length; s++) SCALE.push(steps[s] + 12 * o);
+    }
+  }
+  rebuildScale();
+
+  var keyLabel = document.getElementById('keyLabel');
+  var chromToggle = document.getElementById('chromToggle');
+
+  function refreshKeyUI(){
+    keyLabel.textContent = ROOT_NAMES[rootIndex];
+    chromToggle.classList.toggle('active', chromaticMode);
+  }
+  refreshKeyUI();
+
+  // Rebuilding the scale can change its length (pentatonic vs chromatic), so
+  // re-derive every existing star's pitchIndex from its actual y position —
+  // keeps "height on screen" meaning the same note relative to the new key,
+  // rather than leaving old stars pinned to a now-mismatched index.
+  function applyKeyChange(){
+    rebuildScale();
+    for (var i = 0; i < nodes.length; i++) retuneNode(nodes[i], nodes[i].x, nodes[i].y);
+    refreshKeyUI();
+  }
+
+  document.getElementById('keyPrev').addEventListener('click', function(){
+    rootIndex = (rootIndex + 11) % 12;
+    applyKeyChange();
+  });
+  document.getElementById('keyNext').addEventListener('click', function(){
+    rootIndex = (rootIndex + 1) % 12;
+    applyKeyChange();
+  });
+  chromToggle.addEventListener('click', function(){
+    chromaticMode = !chromaticMode;
+    applyKeyChange();
+  });
+
+  var gridToggle = document.getElementById('gridToggle');
+  gridToggle.addEventListener('click', function(){
+    gridOn = !gridOn;
+    if (gridOn) ensureGridStarted();
+    gridToggle.classList.toggle('active', gridOn);
+  });
+
+  function freqFor(idx){
+    idx = clamp(idx, 0, SCALE.length - 1);
+    return ROOT * Math.pow(2, SCALE[idx] / 12);
+  }
+
+  var TIMBRES = [
+    { color: '#ffb454', type: 'sawtooth', cutoff: 700,  sweep: 2200, resonance: 5, detune: 8,  attack: 0.30, decay: 1.2, sustain: 0.68, release: 2.2 },
+    { color: '#5ee7ff', type: 'triangle', cutoff: 1300, sweep: 2600, resonance: 3, detune: 10, attack: 0.40, decay: 1.5, sustain: 0.62, release: 2.8 },
+    { color: '#ff6f9c', type: 'sine',     cutoff: 1000, sweep: 1600, resonance: 2, detune: 6,  attack: 0.48, decay: 1.7, sustain: 0.72, release: 3.2 },
+    { color: '#b18aff', type: 'sawtooth', cutoff: 550,  sweep: 2600, resonance: 7, detune: 12, attack: 0.22, decay: 1.0, sustain: 0.58, release: 2.2 },
+    { color: '#7089a3', type: 'sine',     cutoff: 380,  sweep: 900,  resonance: 4, detune: 5,  attack: 0.55, decay: 2.0, sustain: 0.75, release: 3.4 },
+    { color: '#b5793f', type: 'sawtooth', cutoff: 320,  sweep: 700,  resonance: 8, detune: 14, attack: 0.15, decay: 0.9, sustain: 0.50, release: 1.8 }
+  ];
+
+  var PATTERNS = [
+    [0], [0,2], [0,2,-2], [0,-2], [0,4,2], [0,2,4], [0,-2,-4], [0,3,1], [0,-1,2]
+  ];
+
+  // ---------- audio ----------
+  var audioCtx = null, master = null, wetSend = null, vibratoLFO = null, noiseBuffer = null;
+
+  function makeReverbImpulse(ctx, duration, decay){
+    var length = Math.floor(ctx.sampleRate * duration);
+    var impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+    for (var ch = 0; ch < 2; ch++){
+      var data = impulse.getChannelData(ch);
+      for (var i = 0; i < length; i++){
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+      }
+    }
+    return impulse;
+  }
+
+  // Flat white noise, shaped entirely by filters and gain envelopes at
+  // playback — beater tick, shell air, snare wires and hat all draw on this
+  // one buffer, so it is left unshaped and long enough for an open hat.
+  function makeNoiseBuffer(ctx){
+    var length = Math.floor(ctx.sampleRate * 2.0);
+    var buf = ctx.createBuffer(1, length, ctx.sampleRate);
+    var data = buf.getChannelData(0);
+    for (var i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    return buf;
+  }
+
+  function ensureAudio(){
+    if (audioCtx) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return;
+    }
+    var AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+
+    // Defaults (-24dB threshold, 12:1, 30dB knee) flattened every drum
+    // transient into the pad wash. A higher threshold and gentler ratio let
+    // the hits keep their attack and only catch the real peaks.
+    var comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -12;
+    comp.knee.value = 18;
+    comp.ratio.value = 5;
+    comp.attack.value = 0.002;
+    comp.release.value = 0.18;
+    comp.connect(audioCtx.destination);
+
+    master = audioCtx.createGain();
+    master.gain.value = 0.19;
+    master.connect(comp);
+
+    var convolver = audioCtx.createConvolver();
+    convolver.buffer = makeReverbImpulse(audioCtx, 2.8, 2.6);
+    var reverbBus = audioCtx.createGain();
+    reverbBus.gain.value = 0.6;
+    convolver.connect(reverbBus);
+    reverbBus.connect(comp);
+
+    wetSend = audioCtx.createGain();
+    wetSend.gain.value = 0.48;
+    wetSend.connect(convolver);
+
+    vibratoLFO = audioCtx.createOscillator();
+    vibratoLFO.type = 'sine';
+    vibratoLFO.frequency.value = 4.6;
+    vibratoLFO.start();
+
+    noiseBuffer = makeNoiseBuffer(audioCtx);
+  }
+
+  // A persistent per-star insert bus (bitcrush "grain" stage + fixed pan),
+  // built once so live grain changes apply to every note that star plays.
+  function ensureBus(node){
+    if (node.bus) return node.bus;
+    var crusher = audioCtx.createScriptProcessor(2048, 1, 1);
+    var hold = { value: 0, counter: 0 };
+    crusher.onaudioprocess = function(ev){
+      var inp = ev.inputBuffer.getChannelData(0);
+      var out = ev.outputBuffer.getChannelData(0);
+      var grain = node.grain;
+      var downsample = 1 + Math.round(grain * 14);
+      var levels = Math.pow(2, mapRange(grain, 0, 1, 16, 3));
+      for (var i = 0; i < inp.length; i++){
+        if (hold.counter % downsample === 0){
+          var v = Math.round(inp[i] * levels) / levels;
+          v += (Math.random() * 2 - 1) * grain * 0.045;
+          hold.value = v;
+        }
+        hold.counter++;
+        out[i] = hold.value;
+      }
+    };
+    var panner = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
+    var volumeGain = audioCtx.createGain();
+    volumeGain.gain.value = node.volume;
+    volumeGain.connect(master);
+    // Drums carry the pulse, so they sit well above the stars before the
+    // viewer's own shift+drag volume enters into it at all.
+    var kindGain = audioCtx.createGain();
+    kindGain.gain.value = node.kind === 'drum' ? 2.1 : 1;
+    kindGain.connect(volumeGain);
+    // A drum should read as a kick in a room, not a pad in a cathedral, so it
+    // gets a fraction of the shared reverb a star sends.
+    var wetGain = audioCtx.createGain();
+    wetGain.gain.value = node.kind === 'drum' ? 0.16 : 1;
+    volumeGain.connect(wetGain);
+    wetGain.connect(wetSend);
+    if (panner){
+      panner.pan.value = node.pan;
+      crusher.connect(panner);
+      panner.connect(kindGain);
+    } else {
+      crusher.connect(kindGain);
+    }
+    node.bus = { crusher: crusher, panner: panner, volumeGain: volumeGain, wetGain: wetGain, kindGain: kindGain };
+    return node.bus;
+  }
+
+  function teardownBus(node){
+    if (!node.bus) return;
+    node.bus.crusher.onaudioprocess = null;
+    try { node.bus.crusher.disconnect(); } catch (err) {}
+    if (node.bus.panner) { try { node.bus.panner.disconnect(); } catch (err) {} }
+    try { node.bus.volumeGain.disconnect(); } catch (err) {}
+    try { node.bus.wetGain.disconnect(); } catch (err) {}
+    try { node.bus.kindGain.disconnect(); } catch (err) {}
+    node.bus = null;
+  }
+
+  function setVolume(node, v){
+    node.volume = clamp(v, 0, 2);
+    if (node.bus) node.bus.volumeGain.gain.setTargetAtTime(node.volume, audioCtx.currentTime, 0.05);
+  }
+
+  function playNote(node, freq, timbre, atTime, velocity){
+    if (!audioCtx) return;
+    var bus = ensureBus(node);
+    var filt = audioCtx.createBiquadFilter();
+    var gain = audioCtx.createGain();
+
+    var sustainMult = node.sustainMult || 1;
+    var decay = timbre.decay * sustainMult;
+    var release = timbre.release * sustainMult;
+
+    filt.type = 'lowpass';
+    filt.Q.value = timbre.resonance;
+    var life = timbre.attack + decay + release;
+    filt.frequency.setValueAtTime(timbre.cutoff, atTime);
+    filt.frequency.linearRampToValueAtTime(timbre.cutoff + timbre.sweep, atTime + timbre.attack + decay * 0.5);
+    filt.frequency.linearRampToValueAtTime(Math.max(timbre.cutoff * 0.7, 120), atTime + life);
+
+    var peak = 0.336 * velocity; // 20% quieter baseline than the original 0.42
+    gain.gain.setValueAtTime(0.0001, atTime);
+    gain.gain.linearRampToValueAtTime(peak, atTime + timbre.attack);
+    gain.gain.linearRampToValueAtTime(Math.max(peak * timbre.sustain, 0.001), atTime + timbre.attack + decay);
+    gain.gain.exponentialRampToValueAtTime(0.0001, atTime + life);
+
+    filt.connect(gain);
+    gain.connect(bus.crusher);
+
+    var detunes = [-timbre.detune, timbre.detune];
+    var cleanupNodes = [filt, gain];
+    for (var d = 0; d < detunes.length; d++){
+      var osc = audioCtx.createOscillator();
+      osc.type = timbre.type;
+      osc.frequency.setValueAtTime(freq, atTime);
+      osc.detune.setValueAtTime(detunes[d], atTime);
+      var vibratoDepth = audioCtx.createGain();
+      vibratoDepth.gain.value = freq * 0.006;
+      vibratoLFO.connect(vibratoDepth);
+      vibratoDepth.connect(osc.frequency);
+      osc.connect(filt);
+      osc.start(atTime);
+      osc.stop(atTime + life + 0.05);
+      cleanupNodes.push(osc, vibratoDepth);
+    }
+
+    var cleanupDelay = Math.max((atTime - audioCtx.currentTime) * 1000, 0) + (life + 0.1) * 1000;
+    setTimeout(function(){
+      for (var k = 0; k < cleanupNodes.length; k++){
+        try { cleanupNodes[k].disconnect(); } catch (err) {}
+      }
+    }, cleanupDelay);
+  }
+
+  function triggerNode(node){
+    node.lastTrigger = performance.now();
+    if (!audioCtx) return;
+    if (node.kind === 'drum'){
+      if (node.drumIdx === 1) playSnare(node);
+      else if (node.drumIdx === 2) playHat(node);
+      else playKick(node);
+      return;
+    }
+    var now = audioCtx.currentTime;
+    var delay = 0;
+    for (var i = 0; i < node.pattern.length; i++){
+      if (Math.random() < 0.12) { delay += 0.1; continue; }
+      var idx = node.pitchIndex + node.pattern[i];
+      var freq = freqFor(idx);
+      var jitter = (Math.random() * 0.03 - 0.015);
+      var velocity = 0.65 + Math.random() * 0.35;
+      playNote(node, freq, TIMBRES[node.timbreIdx], now + delay + jitter, velocity);
+      delay += 0.14 + Math.random() * 0.08;
+    }
+  }
+
+  // Every percussive layer takes a different slice of the shared noise
+  // buffer, so a repeating pattern never sounds like one sample retriggered.
+  function noiseVoice(){
+    var src = audioCtx.createBufferSource();
+    src.buffer = noiseBuffer;
+    return src;
+  }
+  function startNoise(src, now, dur){
+    src.start(now, Math.random() * 0.6);
+    src.stop(now + dur);
+  }
+
+  // An acoustic bass drum rather than an 808: the pitch drop is fast and the
+  // body is gone in a few hundred milliseconds instead of ringing on as a
+  // tonal sub, and the onset carries a felt beater tick plus the wooden knock
+  // and air of a shell. Routed through the node's own bus, so grain, volume
+  // and pan apply exactly as they do to a star.
+  function playKick(node){
+    if (!audioCtx) return;
+    var bus = ensureBus(node);
+    var now = audioCtx.currentTime;
+    var sustainMult = node.sustainMult || 1;
+
+    // Same vertical axis that sets pitch shapes the drum: low on screen is a
+    // big open kick, high on screen a small, tightly damped one.
+    var t = clamp(node.pitchIndex / Math.max(SCALE.length - 1, 1), 0, 1);
+    var life = mapRange(t, 0, 1, 0.40, 0.13) * sustainMult;
+    // Clamped into the range a real bass drum actually occupies, so the tuning
+    // still tracks the star scale without sliding off into sub-bass or toms.
+    var baseFreq = clamp(freqFor(node.pitchIndex) * 0.3, 44, 92);
+    var sweepRatio = mapRange(t, 0, 1, 3.4, 4.6);
+    var sweepTime = mapRange(t, 0, 1, 0.032, 0.016);
+    var beater = mapRange(t, 0, 1, 0.20, 0.40);
+
+    // Fundamental: snaps down onto the body note, then decays fast.
+    var osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(baseFreq * sweepRatio, now);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.3, now + sweepTime);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.94, now + life);
+
+    var gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.85, now + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.22, now + life * 0.35);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + life);
+
+    osc.connect(gain);
+    gain.connect(bus.crusher);
+    osc.start(now);
+    osc.stop(now + life + 0.05);
+
+    // Shell knock: a low-mid partial that dies almost immediately. This is
+    // what reads as "wooden drum" rather than "synthesised sub".
+    var body = audioCtx.createOscillator();
+    body.type = 'triangle';
+    body.frequency.setValueAtTime(baseFreq * 4.2, now);
+    body.frequency.exponentialRampToValueAtTime(baseFreq * 2.2, now + 0.05);
+    var bodyGain = audioCtx.createGain();
+    bodyGain.gain.setValueAtTime(0.0001, now);
+    bodyGain.gain.linearRampToValueAtTime(0.17, now + 0.003);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+    body.connect(bodyGain);
+    bodyGain.connect(bus.crusher);
+    body.start(now);
+    body.stop(now + 0.1);
+
+    // Beater against the head: a bandpassed noise tick, gone in ~20ms.
+    var click = noiseVoice();
+    var clickFilt = audioCtx.createBiquadFilter();
+    clickFilt.type = 'bandpass';
+    clickFilt.frequency.value = 2400;
+    clickFilt.Q.value = 0.8;
+    var clickGain = audioCtx.createGain();
+    clickGain.gain.setValueAtTime(beater, now);
+    clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.022);
+    click.connect(clickFilt);
+    clickFilt.connect(clickGain);
+    clickGain.connect(bus.crusher);
+    startNoise(click, now, 0.05);
+
+    // Air moving in the shell — a short lowpassed breath under the attack.
+    var air = noiseVoice();
+    var airFilt = audioCtx.createBiquadFilter();
+    airFilt.type = 'lowpass';
+    airFilt.frequency.value = 320;
+    airFilt.Q.value = 0.9;
+    var airGain = audioCtx.createGain();
+    airGain.gain.setValueAtTime(0.26, now);
+    airGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+    air.connect(airFilt);
+    airFilt.connect(airGain);
+    airGain.connect(bus.crusher);
+    startNoise(air, now, 0.12);
+
+    var cleanupNodes = [osc, gain, body, bodyGain, click, clickFilt, clickGain, air, airFilt, airGain];
+    setTimeout(function(){
+      for (var k = 0; k < cleanupNodes.length; k++){
+        try { cleanupNodes[k].disconnect(); } catch (err) {}
+      }
+    }, (life + 0.25) * 1000);
+  }
+
+  // Snare. A real one is a broadband rattle with a tuned head under it, not a
+  // narrow band of hiss, so the wires run through a wide highpass with a
+  // presence peak rather than a bandpass, the tuned modes are the two a
+  // drum actually rings at, and a short air layer fills the gap between them.
+  // Height damps it: low on screen is a fat backbeat, high a tight rim crack.
+  function playSnare(node){
+    if (!audioCtx) return;
+    var bus = ensureBus(node);
+    var now = audioCtx.currentTime;
+    var sustainMult = node.sustainMult || 1;
+
+    var t = clamp(node.pitchIndex / Math.max(SCALE.length - 1, 1), 0, 1);
+    var life = mapRange(t, 0, 1, 0.34, 0.13) * sustainMult;
+    var toneFreq = mapRange(t, 0, 1, 172, 258);
+    // No two hits on a kit are identical; a few percent of drift per hit is
+    // most of what separates a played drum from a retriggered sample.
+    var vary = 0.94 + Math.random() * 0.12;
+    var cleanup = [];
+
+    // Tuned modes: the head's fundamental, its second mode a fifth-ish above,
+    // and a body an octave down that carries the weight and dies first.
+    var tones = [
+      { freq: toneFreq * 0.5,  peak: 0.30, span: 0.26, drop: 1.30, type: 'sine',     detune: 0 },
+      { freq: toneFreq,        peak: 0.30, span: 0.42, drop: 1.55, type: 'triangle', detune: -7 },
+      { freq: toneFreq * 1.48, peak: 0.16, span: 0.26, drop: 1.55, type: 'triangle', detune: 9 }
+    ];
+    // One shared lowpass keeps the tuned layer round instead of buzzy.
+    var toneFilt = audioCtx.createBiquadFilter();
+    toneFilt.type = 'lowpass';
+    toneFilt.frequency.value = 1400;
+    toneFilt.Q.value = 0.7;
+    toneFilt.connect(bus.crusher);
+    cleanup.push(toneFilt);
+
+    for (var i = 0; i < tones.length; i++){
+      var o = audioCtx.createOscillator();
+      o.type = tones[i].type;
+      o.detune.setValueAtTime(tones[i].detune, now);
+      o.frequency.setValueAtTime(tones[i].freq * tones[i].drop * vary, now);
+      o.frequency.exponentialRampToValueAtTime(tones[i].freq * vary, now + 0.02);
+      var g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(tones[i].peak, now + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + life * tones[i].span);
+      o.connect(g);
+      g.connect(toneFilt);
+      o.start(now);
+      o.stop(now + life + 0.05);
+      cleanup.push(o, g);
+    }
+
+    // Initial snap: broadband, 10ms, everything above the body at once. This
+    // is the part that reads as a stick hitting a head.
+    var snap = noiseVoice();
+    var snapHP = audioCtx.createBiquadFilter();
+    snapHP.type = 'highpass';
+    snapHP.frequency.value = 600;
+    var snapGain = audioCtx.createGain();
+    snapGain.gain.setValueAtTime(0.62, now);
+    snapGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.011);
+    snap.connect(snapHP);
+    snapHP.connect(snapGain);
+    snapGain.connect(bus.crusher);
+    startNoise(snap, now, 0.04);
+    cleanup.push(snap, snapHP, snapGain);
+
+    // The wires themselves: wide open above ~1.2k with a presence lift where
+    // a snare actually lives, and a two-stage decay — a hard burst, then the
+    // rattle riding out underneath.
+    var wires = noiseVoice();
+    var wireHP = audioCtx.createBiquadFilter();
+    wireHP.type = 'highpass';
+    wireHP.frequency.value = mapRange(t, 0, 1, 1100, 1900) * vary;
+    wireHP.Q.value = 0.6;
+    var presence = audioCtx.createBiquadFilter();
+    presence.type = 'peaking';
+    presence.frequency.value = mapRange(t, 0, 1, 4600, 6200) * vary;
+    presence.Q.value = 0.9;
+    presence.gain.value = 7;
+    // Closes slightly as it decays, the way a rattle dulls as it loses energy.
+    var wireTilt = audioCtx.createBiquadFilter();
+    wireTilt.type = 'lowpass';
+    wireTilt.frequency.setValueAtTime(12000, now);
+    wireTilt.frequency.exponentialRampToValueAtTime(5000, now + life);
+    var wireGain = audioCtx.createGain();
+    wireGain.gain.setValueAtTime(0.0001, now);
+    wireGain.gain.linearRampToValueAtTime(0.52, now + 0.002);
+    wireGain.gain.exponentialRampToValueAtTime(0.15, now + life * 0.20);
+    wireGain.gain.exponentialRampToValueAtTime(0.0001, now + life);
+    wires.connect(wireHP);
+    wireHP.connect(presence);
+    presence.connect(wireTilt);
+    wireTilt.connect(wireGain);
+    wireGain.connect(bus.crusher);
+    startNoise(wires, now, life + 0.05);
+    cleanup.push(wires, wireHP, presence, wireTilt, wireGain);
+
+    // Air in the shell between the tuned modes and the wires — without this
+    // the middle of the sound is hollow and it reads as two separate noises.
+    var air = noiseVoice();
+    var airBP = audioCtx.createBiquadFilter();
+    airBP.type = 'bandpass';
+    airBP.frequency.value = mapRange(t, 0, 1, 520, 780) * vary;
+    airBP.Q.value = 1.1;
+    var airGain = audioCtx.createGain();
+    airGain.gain.setValueAtTime(0.0001, now);
+    airGain.gain.linearRampToValueAtTime(0.34, now + 0.003);
+    airGain.gain.exponentialRampToValueAtTime(0.0001, now + life * 0.3);
+    air.connect(airBP);
+    airBP.connect(airGain);
+    airGain.connect(bus.crusher);
+    startNoise(air, now, life * 0.4 + 0.05);
+    cleanup.push(air, airBP, airGain);
+
+    setTimeout(function(){
+      for (var k = 0; k < cleanup.length; k++){
+        try { cleanup[k].disconnect(); } catch (err) {}
+      }
+    }, (life + 0.25) * 1000);
+  }
+
+  // Hat: highpassed noise with a metallic band on top. Height is how tightly
+  // it is closed — low on screen rides open, high is a clipped tick.
+  function playHat(node){
+    if (!audioCtx) return;
+    var bus = ensureBus(node);
+    var now = audioCtx.currentTime;
+    var sustainMult = node.sustainMult || 1;
+
+    var t = clamp(node.pitchIndex / Math.max(SCALE.length - 1, 1), 0, 1);
+    var life = mapRange(t, 0, 1, 0.36, 0.035) * sustainMult;
+
+    var src = noiseVoice();
+    var hp = audioCtx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 7000;
+    var bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = mapRange(t, 0, 1, 9000, 11500);
+    bp.Q.value = 0.9;
+
+    var gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.34, now + 0.001);
+    // An open hat sags away slowly; a closed one is cut off almost at once.
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + life);
+
+    src.connect(hp);
+    hp.connect(bp);
+    bp.connect(gain);
+    gain.connect(bus.crusher);
+    startNoise(src, now, life + 0.05);
+
+    var cleanupNodes = [src, hp, bp, gain];
+    setTimeout(function(){
+      for (var k = 0; k < cleanupNodes.length; k++){
+        try { cleanupNodes[k].disconnect(); } catch (err) {}
+      }
+    }, (life + 0.25) * 1000);
+  }
+
+  // A short, dry pluck — deliberately not the star's own (long, airy) voice,
+  // so a thrown star reads as a distinct percussive event when it bounces.
+  function playPizzicato(node){
+    if (!audioCtx) return;
+    var bus = ensureBus(node);
+    var timbre = TIMBRES[node.timbreIdx];
+    var freq = freqFor(node.pitchIndex);
+    var now = audioCtx.currentTime;
+    var life = 0.22;
+
+    var filt = audioCtx.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.Q.value = timbre.resonance;
+    filt.frequency.value = timbre.cutoff * 1.3;
+
+    var gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.65, now + 0.004); // 0.5 baseline, 30% louder
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + life);
+
+    filt.connect(gain);
+    gain.connect(bus.crusher);
+
+    var osc = audioCtx.createOscillator();
+    osc.type = timbre.type;
+    osc.frequency.setValueAtTime(freq, now);
+    osc.connect(filt);
+    osc.start(now);
+    osc.stop(now + life + 0.05);
+
+    setTimeout(function(){
+      try { filt.disconnect(); } catch (err) {}
+      try { gain.disconnect(); } catch (err) {}
+      try { osc.disconnect(); } catch (err) {}
+    }, (life + 0.1) * 1000);
+  }
+
+  var THROW_MIN_SPEED = 300; // px/sec — below this a release is just a normal drag-end
+  var THROW_DAMPING = 0.55;  // fraction of flick speed the star actually launches at
+  var BOUNCE_DAMPING = 0.88; // speed retained per wall bounce
+  var PHYSICS_SETTLE_SPEED = 4;
+
+  function launchNode(node, vx, vy){
+    node.vx = vx * THROW_DAMPING;
+    node.vy = vy * THROW_DAMPING;
+  }
+
+  function updatePhysics(dt){
+    for (var i = 0; i < nodes.length; i++){
+      var n = nodes[i];
+      if (!n.vx && !n.vy) continue;
+      n.x += n.vx * dt;
+      n.y += n.vy * dt;
+      var bounced = false;
+      if (n.x < n.radius){ n.x = n.radius; n.vx = -n.vx * BOUNCE_DAMPING; bounced = true; }
+      else if (n.x > W - n.radius){ n.x = W - n.radius; n.vx = -n.vx * BOUNCE_DAMPING; bounced = true; }
+      if (n.y < n.radius){ n.y = n.radius; n.vy = -n.vy * BOUNCE_DAMPING; bounced = true; }
+      else if (n.y > H - n.radius){ n.y = H - n.radius; n.vy = -n.vy * BOUNCE_DAMPING; bounced = true; }
+      retuneNode(n, n.x, n.y);
+      var decay = Math.pow(0.55, dt);
+      n.vx *= decay; n.vy *= decay;
+      if (bounced) playPizzicato(n);
+      if (Math.hypot(n.vx, n.vy) < PHYSICS_SETTLE_SPEED){ n.vx = 0; n.vy = 0; }
+    }
+  }
+
+  var DRONE_RELEASE = 1.8;
+  var DRONE_ATTACK_MIN = 0.1, DRONE_ATTACK_MAX = 3.2;
+
+  // Longer lines swell in more slowly and audibly; short ones snap in fast —
+  // proportional across the whole range, not capped to a fixed onset time.
+  // A full-width (constant/Infinity) drone gets the slowest attack of all.
+  function droneAttackFor(cycleLength){
+    if (!isFinite(cycleLength)) return DRONE_ATTACK_MAX;
+    var raw = mapRange(clamp(cycleLength, DRONE_CYCLE_MIN, DRONE_CYCLE_MAX), DRONE_CYCLE_MIN, DRONE_CYCLE_MAX, DRONE_ATTACK_MIN, DRONE_ATTACK_MAX);
+    return Math.min(raw, cycleLength * 0.4);
+  }
+
+  // Drones hold a persistent oscillator pair that never stops on its own —
+  // only deleteDrone() ends it. Instead of a fixed sustain, the gain breathes
+  // in a repeating attack/hold/release cycle whose period comes from the
+  // line's length, so the drone keeps pulsing until explicitly removed.
+  function buildDrone(x0, x1, y){
+    var timbre = TIMBRES[selectedTimbreIdx];
+    var freq = droneFreqFor(y);
+    var pan = clamp(mapRange((x0 + x1) / 2, 0, W, -0.7, 0.7), -0.7, 0.7);
+    var now = audioCtx.currentTime;
+
+    var baseCutoff = timbre.cutoff + timbre.sweep * 0.4;
+    var filt = audioCtx.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.Q.value = timbre.resonance * 0.6;
+    filt.frequency.value = baseCutoff;
+
+    // A dedicated wobble LFO per drone: rate ("speed") and depth scale with
+    // its register, so the filter sweeps around whatever band it's centered on.
+    var filterLFO = audioCtx.createOscillator();
+    filterLFO.type = 'sine';
+    filterLFO.frequency.value = 0.2;
+    var filterDepth = audioCtx.createGain();
+    filterDepth.gain.value = baseCutoff * 0.5;
+    filterLFO.connect(filterDepth);
+    filterDepth.connect(filt.frequency);
+    filterLFO.start(now);
+
+    var gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+
+    // Separate from the pulsing envelope gain above, so volume changes never
+    // fight the cancelScheduledValues() calls that drive the breathing cycle.
+    var volumeGain = audioCtx.createGain();
+    volumeGain.gain.value = 1;
+
+    var panner = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
+    filt.connect(gain);
+    gain.connect(volumeGain);
+    if (panner){ volumeGain.connect(panner); panner.pan.value = pan; panner.connect(master); panner.connect(wetSend); }
+    else { volumeGain.connect(master); volumeGain.connect(wetSend); }
+
+    var detunes = [-timbre.detune * 0.7, timbre.detune * 0.7];
+    var oscs = [], vibs = [];
+    for (var i = 0; i < detunes.length; i++){
+      var osc = audioCtx.createOscillator();
+      osc.type = timbre.type;
+      osc.frequency.setValueAtTime(freq, now);
+      osc.detune.setValueAtTime(detunes[i], now);
+      var vibDepth = audioCtx.createGain();
+      vibDepth.gain.value = freq * 0.004;
+      vibratoLFO.connect(vibDepth);
+      vibDepth.connect(osc.frequency);
+      osc.connect(filt);
+      osc.start(now);
+      oscs.push(osc); vibs.push(vibDepth);
+    }
+
+    return {
+      x0: x0, x1: x1, y: y, color: timbre.color,
+      cycleLength: 2, nextPulseAt: 0,
+      filterRate: 0.2, baseCutoff: baseCutoff, volume: 1,
+      audio: {
+        filt: filt, gain: gain, volumeGain: volumeGain, panner: panner, osc1: oscs[0], osc2: oscs[1], vib1: vibs[0], vib2: vibs[1],
+        filterLFO: filterLFO, filterDepth: filterDepth
+      }
+    };
+  }
+
+  function droneEnvelopeShape(cycleLength){
+    var attack = droneAttackFor(cycleLength);
+    var release = Math.min(DRONE_RELEASE, cycleLength * 0.4);
+    var hold = Math.max(cycleLength - attack - release, 0.05);
+    return { attack: attack, hold: hold, release: release };
+  }
+
+  var DRONE_FLOOR = 0.18; // fraction of peak between repeats — quiet enough for a clear attack, never truly silent
+
+  // A drone spanning the full canvas width holds forever with no repeat —
+  // droneCycleFor signals that with Infinity, which this checks for.
+  var DRONE_PEAK = 0.322; // 30% down from 0.46 — they were sitting on top of the stars
+
+  function pulseDrone(drone){
+    var now = audioCtx.currentTime;
+    var peak = DRONE_PEAK;
+    var g = drone.audio.gain.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(Math.max(g.value, 0.0001), now);
+
+    if (!isFinite(drone.cycleLength)){
+      g.linearRampToValueAtTime(peak, now + droneAttackFor(drone.cycleLength));
+      drone.nextPulseAt = Infinity;
+      return;
+    }
+
+    var shape = droneEnvelopeShape(drone.cycleLength);
+    var floor = peak * DRONE_FLOOR;
+    g.linearRampToValueAtTime(peak, now + shape.attack);
+    g.setValueAtTime(peak, now + shape.attack + shape.hold);
+    g.linearRampToValueAtTime(floor, now + shape.attack + shape.hold + shape.release);
+    drone.nextPulseAt = now + drone.cycleLength;
+  }
+
+  function updateDrones(){
+    if (!audioCtx) return;
+    var now = audioCtx.currentTime;
+    for (var i = 0; i < drones.length; i++){
+      if (now >= drones[i].nextPulseAt) pulseDrone(drones[i]);
+    }
+  }
+
+  function deleteDrone(drone){
+    var idx = drones.indexOf(drone);
+    if (idx !== -1) drones.splice(idx, 1);
+    var now = audioCtx.currentTime;
+    var g = drone.audio.gain.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.exponentialRampToValueAtTime(0.0001, now + 0.3);
+    drone.audio.osc1.stop(now + 0.35);
+    drone.audio.osc2.stop(now + 0.35);
+    drone.audio.filterLFO.stop(now + 0.35);
+    var cleanupNodes = [
+      drone.audio.filt, drone.audio.gain, drone.audio.volumeGain, drone.audio.osc1, drone.audio.osc2, drone.audio.vib1, drone.audio.vib2,
+      drone.audio.filterLFO, drone.audio.filterDepth
+    ];
+    if (drone.audio.panner) cleanupNodes.push(drone.audio.panner);
+    setTimeout(function(){
+      for (var k = 0; k < cleanupNodes.length; k++){
+        try { cleanupNodes[k].disconnect(); } catch (err) {}
+      }
+    }, 400);
+  }
+
+  // ---------- helpers ----------
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+  function mapRange(v, a1, b1, a2, b2){ return a2 + (v - a1) * (b2 - a2) / (b1 - a1); }
+  function dist(x1,y1,x2,y2){ return Math.hypot(x2-x1, y2-y1); }
+
+  // ---------- world state ----------
+  var nodes = [];
+  var nextNodeId = 1;
+  var selectedNodes = [];
+  var drones = [];
+  var DRONE_MIN_LEN = 16;
+
+  function pitchIndexFor(y){
+    return clamp(Math.round(mapRange(y, H, 0, 0, SCALE.length - 1)), 0, SCALE.length - 1);
+  }
+
+  // ---------- beat grid ----------
+  // A shared step clock that grid-snapped stars/drums lock onto, so they
+  // fire in sync on their column's beat instead of drifting independently.
+  // Un-snapped ones are untouched — the grid is opt-in per placement/drag.
+  var GRID_STEPS = 16;
+  var GRID_STEP_DUR = 0.125; // seconds per step (120bpm sixteenths — a 2s bar)
+  var gridOn = false;
+  var gridStartTime = null;
+
+  function ensureGridStarted(){
+    if (gridStartTime === null && audioCtx) gridStartTime = audioCtx.currentTime;
+  }
+
+  function gridColumnX(i){ return (i + 0.5) * (W / GRID_STEPS); }
+
+  function nearestGridStep(x){
+    return clamp(Math.floor(x / (W / GRID_STEPS)), 0, GRID_STEPS - 1);
+  }
+
+  function snapXToGrid(x){ return gridColumnX(nearestGridStep(x)); }
+
+  // Drones sit an octave below stars at the same height — reads as a bass/pad
+  // layer under the star patterns rather than competing in the same register.
+  function droneFreqFor(y){
+    return freqFor(pitchIndexFor(y)) * 0.5;
+  }
+
+  // Line length maps to how long one breath of the drone's repeating cycle is.
+  var DRONE_CYCLE_MIN = 1.2, DRONE_CYCLE_MAX = 12;
+
+  function droneCycleFor(length){
+    if (length >= W - 2) return Infinity; // full canvas width — hold forever, no repeat
+    return clamp(mapRange(length, DRONE_MIN_LEN, W, DRONE_CYCLE_MIN, DRONE_CYCLE_MAX), DRONE_CYCLE_MIN, DRONE_CYCLE_MAX);
+  }
+
+  function createDrone(x0, x1, y){
+    if (x1 - x0 < DRONE_MIN_LEN) return;
+    var drone = buildDrone(x0, x1, y);
+    drone.cycleLength = droneCycleFor(x1 - x0);
+    drones.push(drone);
+    pulseDrone(drone);
+    return drone;
+  }
+
+  // Vertical drag re-pitches the held tone; horizontal drag resizes it
+  // (symmetrically around its center), which changes its pulse period —
+  // taking effect from the next cycle so the current breath isn't cut off.
+  function retuneDrone(drone, y){
+    drone.y = clamp(y, 0, H);
+    var freq = droneFreqFor(drone.y);
+    drone.audio.osc1.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.06);
+    drone.audio.osc2.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.06);
+  }
+
+  function resizeDrone(drone, x0, x1){
+    drone.x0 = clamp(x0, 0, W);
+    drone.x1 = clamp(x1, 0, W);
+    var wasConstant = !isFinite(drone.cycleLength);
+    drone.cycleLength = droneCycleFor(drone.x1 - drone.x0);
+    // if it just left constant mode, nextPulseAt is stuck at Infinity — kick it awake
+    if (wasConstant && isFinite(drone.cycleLength)) pulseDrone(drone);
+  }
+
+  // dir > 0 speeds the filter wobble up, dir < 0 slows it down.
+  function adjustDroneFilterRate(drone, dir){
+    drone.filterRate = clamp(drone.filterRate * (dir > 0 ? 1.25 : 0.8), 0.05, 5);
+    drone.audio.filterLFO.frequency.setTargetAtTime(drone.filterRate, audioCtx.currentTime, 0.1);
+  }
+
+  // dir > 0 shifts the filter's center into a higher register, dir < 0 lower.
+  function adjustDroneRegister(drone, dir){
+    drone.baseCutoff = clamp(drone.baseCutoff * (dir > 0 ? 1.15 : 1 / 1.15), 150, 8000);
+    drone.audio.filt.frequency.setTargetAtTime(drone.baseCutoff, audioCtx.currentTime, 0.15);
+    drone.audio.filterDepth.gain.setTargetAtTime(drone.baseCutoff * 0.5, audioCtx.currentTime, 0.15);
+  }
+
+  function setDroneVolume(drone, v){
+    drone.volume = clamp(v, 0, 2);
+    drone.audio.volumeGain.gain.setTargetAtTime(drone.volume, audioCtx.currentTime, 0.05);
+  }
+
+  // Two independent axes: vertical position sets pitch, horizontal sets
+  // repeat speed — so dragging a star retunes and re-times it separately.
+  function retuneNode(node, x, y){
+    node.x = x;
+    node.y = y;
+    node.pitchIndex = pitchIndexFor(y);
+    node.radius = clamp(16 - node.pitchIndex * 0.55, 6, 16);
+    var baseCycle = mapRange(x, 0, W, 3.2, 1.1);
+    node.cycleLength = clamp(baseCycle, 1.1, 3.2) * node.cycleVariance;
+  }
+
+  // Three voices, enough for a techno pattern: kick, snare, hat. Which one a
+  // ctrl/cmd+tap plants is chosen here rather than derived from position, so
+  // dragging a drum around reshapes it but never turns it into another drum.
+  var DRUMS = [
+    { name: 'kick',  color: '#e0483c', sizeScale: 0.95 },
+    { name: 'snare', color: '#c9cddc', sizeScale: 0.78 },
+    { name: 'hat',   color: '#8e97ad', sizeScale: 0.58 }
+  ];
+  var selectedDrumIdx = 0;
+
+  function createNode(x, y, timbreIdx, kind, drumIdx){
+    kind = kind || 'star';
+    if (timbreIdx === undefined) timbreIdx = selectedTimbreIdx;
+    if (drumIdx === undefined) drumIdx = selectedDrumIdx;
+    var pattern = kind === 'drum' ? null : PATTERNS[Math.floor(Math.random() * PATTERNS.length)];
+    var node = {
+      id: nextNodeId++, x: x, y: y, pitchIndex: 0, timbreIdx: timbreIdx, kind: kind,
+      drumIdx: drumIdx,
+      radius: 10, color: kind === 'drum' ? DRUMS[drumIdx].color : TIMBRES[timbreIdx].color, pattern: pattern,
+      lastTrigger: 0, active: false, cycleLength: 2, nextPlayAt: 0,
+      cycleVariance: 0.9 + Math.random() * 0.3,
+      pan: clamp((Math.random() * 2 - 1) * 0.6, -0.6, 0.6),
+      grain: 0, volume: 1, bus: null, sustainMult: 1, vx: 0, vy: 0,
+      onGrid: false, gridStep: 0, lastFiredBar: -1
+    };
+    retuneNode(node, x, y);
+    nodes.push(node);
+    updateTelemetry();
+    return node;
+  }
+
+  // Dragging a star stretches its notes — distance travelled while dragging
+  // (not just displacement) accumulates, so fidgeting it around opens it up.
+  function growSustain(node, distanceMoved){
+    node.sustainMult = clamp(node.sustainMult + distanceMoved * 0.0008, 1, 3);
+  }
+
+  function activateNode(node){
+    if (!audioCtx || node.active) return;
+    node.active = true;
+    triggerNode(node);
+    node.nextPlayAt = audioCtx.currentTime + node.cycleLength;
+    updateTelemetry();
+  }
+
+  function deactivateNode(node){
+    node.active = false;
+    updateTelemetry();
+  }
+
+  function toggleNode(node){
+    if (node.active) deactivateNode(node); else activateNode(node);
+  }
+
+  function deleteNode(node){
+    var idx = nodes.indexOf(node);
+    if (idx !== -1) nodes.splice(idx, 1);
+    var si = selectedNodes.indexOf(node);
+    if (si !== -1) selectedNodes.splice(si, 1);
+    teardownBus(node);
+    updateTelemetry();
+  }
+
+  // A group mute: if anything selected is sounding, silence the whole group;
+  // if the whole group is already silent, bring it all back at once.
+  function toggleSelectedMute(){
+    if (!selectedNodes.length) return;
+    var anyActive = false;
+    for (var i = 0; i < selectedNodes.length; i++){
+      if (selectedNodes[i].active){ anyActive = true; break; }
+    }
+    for (var j = 0; j < selectedNodes.length; j++){
+      var n = selectedNodes[j];
+      if (anyActive){ if (n.active) deactivateNode(n); }
+      else { if (!n.active) activateNode(n); }
+    }
+  }
+
+  function updateTelemetry(){
+    elStars.textContent = nodes.length;
+    var activeCount = 0;
+    for (var i = 0; i < nodes.length; i++) if (nodes[i].active) activeCount++;
+    elActive.textContent = activeCount;
+  }
+
+  function clearSky(){
+    for (var i = 0; i < nodes.length; i++) teardownBus(nodes[i]);
+    var droneSnapshot = drones.slice();
+    for (var j = 0; j < droneSnapshot.length; j++) deleteDrone(droneSnapshot[j]);
+    nodes = []; nextNodeId = 1; selectedNodes = []; drones = [];
+    updateTelemetry();
+  }
+
+  // ---------- interaction ----------
+  var DRAG_THRESHOLD = 6;
+  var pointerState = null; // {startX,startY,dragNode,dragging}
+
+  function hitTestNode(x, y){
+    var best = null, bestD = Infinity;
+    for (var i = 0; i < nodes.length; i++){
+      var n = nodes[i];
+      var d = dist(x, y, n.x, n.y);
+      var r = Math.max(n.radius + 10, 18);
+      if (d <= r && d < bestD){ best = n; bestD = d; }
+    }
+    return best;
+  }
+
+  function hitTestDrone(x, y){
+    for (var i = drones.length - 1; i >= 0; i--){
+      var d = drones[i];
+      if (x >= d.x0 - 10 && x <= d.x1 + 10 && Math.abs(y - d.y) <= 14) return d;
+    }
+    return null;
+  }
+
+  canvas.addEventListener('pointerdown', function(e){
+    ensureAudio();
+    var rect = canvas.getBoundingClientRect();
+    var x = e.clientX - rect.left, y = e.clientY - rect.top;
+    canvas.setPointerCapture(e.pointerId);
+    var hitNode = hitTestNode(x, y);
+
+    // Shift+drag on a star adjusts its volume — an ordinary click-drag with a
+    // modifier, not the wheel or a secondary mouse button, so it isn't subject
+    // to the OS/browser remapping quirks that broke the earlier attempts
+    // (Shift+wheel becomes a horizontal scroll; right-click-drag is unreliable
+    // on trackpads) and works the same on every input device.
+    if (hitNode && e.shiftKey){
+      pointerState = { mode: 'volume', node: hitNode, startY: y, startVolume: hitNode.volume };
+      return;
+    }
+
+    var hitDrone = !hitNode ? hitTestDrone(x, y) : null;
+    if (hitDrone && e.shiftKey){
+      pointerState = { mode: 'drone-volume', target: hitDrone, startY: y, startVolume: hitDrone.volume };
+      return;
+    }
+    if (hitDrone){
+      pointerState = {
+        mode: 'drone-edit', target: hitDrone, dragging: false,
+        startX: x, startY: y,
+        startCenterX: (hitDrone.x0 + hitDrone.x1) / 2,
+        startHalfWidth: (hitDrone.x1 - hitDrone.x0) / 2,
+        startPitchY: hitDrone.y
+      };
+      return;
+    }
+
+    var isSelected = hitNode && selectedNodes.indexOf(hitNode) !== -1;
+    var groupOrigins = null;
+    if (isSelected && selectedNodes.length > 1){
+      groupOrigins = selectedNodes.map(function(n){ return { node: n, x: n.x, y: n.y }; });
+    } else {
+      selectedNodes = [];
+    }
+    pointerState = {
+      mode: 'normal', startX: x, startY: y, dragNode: hitNode, dragging: false,
+      curX: x, curY: y, groupOrigins: groupOrigins,
+      drone: !hitNode && e.shiftKey,
+      drum: !hitNode && (e.ctrlKey || e.metaKey),
+      lastMoveTime: performance.now(), vx: 0, vy: 0
+    };
+  });
+
+  canvas.addEventListener('pointermove', function(e){
+    if (!pointerState) return;
+    var rect = canvas.getBoundingClientRect();
+
+    if (pointerState.mode === 'volume'){
+      var vy = clamp(e.clientY - rect.top, 0, H);
+      setVolume(pointerState.node, pointerState.startVolume + (pointerState.startY - vy) * 0.008);
+      return;
+    }
+
+    if (pointerState.mode === 'drone-volume'){
+      var dvy = clamp(e.clientY - rect.top, 0, H);
+      setDroneVolume(pointerState.target, pointerState.startVolume + (pointerState.startY - dvy) * 0.008);
+      return;
+    }
+
+    if (pointerState.mode === 'drone-edit'){
+      var dex = clamp(e.clientX - rect.left, 0, W);
+      var dey = clamp(e.clientY - rect.top, 0, H);
+      if (!pointerState.dragging && dist(pointerState.startX, pointerState.startY, dex, dey) > DRAG_THRESHOLD){
+        pointerState.dragging = true;
+      }
+      if (pointerState.dragging){
+        var ddx = dex - pointerState.startX, ddy = dey - pointerState.startY;
+        var newHalfWidth = clamp(pointerState.startHalfWidth + ddx, DRONE_MIN_LEN / 2, W / 2);
+        resizeDrone(pointerState.target, pointerState.startCenterX - newHalfWidth, pointerState.startCenterX + newHalfWidth);
+        retuneDrone(pointerState.target, pointerState.startPitchY + ddy);
+      }
+      return;
+    }
+
+    var x = clamp(e.clientX - rect.left, 0, W);
+    var y = clamp(e.clientY - rect.top, 0, H);
+    var prevX = pointerState.curX, prevY = pointerState.curY;
+    var moveNow = performance.now();
+    var moveDt = Math.max((moveNow - pointerState.lastMoveTime) / 1000, 0.001);
+    pointerState.vx = (x - prevX) / moveDt;
+    pointerState.vy = (y - prevY) / moveDt;
+    pointerState.lastMoveTime = moveNow;
+    pointerState.curX = x; pointerState.curY = y;
+    if (!pointerState.dragging && dist(pointerState.startX, pointerState.startY, x, y) > DRAG_THRESHOLD){
+      pointerState.dragging = true;
+    }
+    if (pointerState.dragging && pointerState.dragNode){
+      var frameDist = dist(prevX, prevY, x, y);
+      if (pointerState.groupOrigins){
+        var dx = x - pointerState.startX, dy = y - pointerState.startY;
+        for (var i = 0; i < pointerState.groupOrigins.length; i++){
+          var o = pointerState.groupOrigins[i];
+          var rawGX = clamp(o.x + dx, 0, W);
+          var snappedGX = gridOn ? snapXToGrid(rawGX) : rawGX;
+          retuneNode(o.node, snappedGX, clamp(o.y + dy, 0, H));
+          growSustain(o.node, frameDist);
+          o.node.onGrid = gridOn;
+          if (gridOn){ ensureGridStarted(); o.node.gridStep = nearestGridStep(snappedGX); }
+        }
+      } else {
+        var snappedX = gridOn ? snapXToGrid(x) : x;
+        retuneNode(pointerState.dragNode, snappedX, y);
+        growSustain(pointerState.dragNode, frameDist);
+        pointerState.dragNode.onGrid = gridOn;
+        if (gridOn){ ensureGridStarted(); pointerState.dragNode.gridStep = nearestGridStep(snappedX); }
+      }
+    }
+  });
+
+  canvas.addEventListener('wheel', function(e){
+    var rect = canvas.getBoundingClientRect();
+    var x = e.clientX - rect.left, y = e.clientY - rect.top;
+    var n = hitTestNode(x, y);
+    if (n){
+      e.preventDefault();
+      n.grain = clamp(n.grain + Math.sign(e.deltaY) * 0.06, 0, 1);
+      return;
+    }
+    var d = hitTestDrone(x, y);
+    if (d){
+      e.preventDefault();
+      var dir = -Math.sign(e.deltaY);
+      if (e.altKey) adjustDroneRegister(d, dir);
+      else adjustDroneFilterRate(d, dir);
+    }
+  }, { passive: false });
+
+  var DOUBLE_TAP_MS = 350;
+  var lastTapTarget = null, lastTapTime = 0;
+
+  canvas.addEventListener('pointerup', function(e){
+    if (!pointerState) return;
+    var ps = pointerState;
+
+    if (ps.mode === 'volume' || ps.mode === 'drone-volume'){
+      pointerState = null;
+      return;
+    }
+
+    if (ps.mode === 'drone-edit'){
+      if (!ps.dragging){
+        var dnow = performance.now();
+        if (lastTapTarget === ps.target && (dnow - lastTapTime) < DOUBLE_TAP_MS){
+          deleteDrone(ps.target);
+          lastTapTarget = null;
+        } else {
+          lastTapTarget = ps.target;
+          lastTapTime = dnow;
+        }
+      }
+      pointerState = null;
+      return;
+    }
+
+    if (ps.dragging){
+      if (!ps.dragNode){
+        if (ps.drone){
+          createDrone(Math.min(ps.startX, ps.curX), Math.max(ps.startX, ps.curX), (ps.startY + ps.curY) / 2);
+        } else {
+          var x0 = Math.min(ps.startX, ps.curX), x1 = Math.max(ps.startX, ps.curX);
+          var y0 = Math.min(ps.startY, ps.curY), y1 = Math.max(ps.startY, ps.curY);
+          var picked = [];
+          for (var i = 0; i < nodes.length; i++){
+            var n = nodes[i];
+            if (n.x >= x0 && n.x <= x1 && n.y >= y0 && n.y <= y1) picked.push(n);
+          }
+          selectedNodes = picked;
+        }
+      } else if (Math.hypot(ps.vx, ps.vy) > THROW_MIN_SPEED){
+        if (ps.groupOrigins){
+          for (var gi = 0; gi < ps.groupOrigins.length; gi++) launchNode(ps.groupOrigins[gi].node, ps.vx, ps.vy);
+        } else {
+          launchNode(ps.dragNode, ps.vx, ps.vy);
+        }
+      }
+    } else {
+      if (ps.dragNode){
+        var now = performance.now();
+        if (lastTapTarget === ps.dragNode && (now - lastTapTime) < DOUBLE_TAP_MS){
+          deleteNode(ps.dragNode);
+          lastTapTarget = null;
+        } else {
+          toggleNode(ps.dragNode);
+          lastTapTarget = ps.dragNode;
+          lastTapTime = now;
+        }
+      } else if (ps.drum){
+        var dx = gridOn ? snapXToGrid(ps.startX) : ps.startX;
+        var dNode = createNode(dx, ps.startY, undefined, 'drum');
+        if (gridOn){ ensureGridStarted(); dNode.onGrid = true; dNode.gridStep = nearestGridStep(dx); }
+      } else {
+        var sx = gridOn ? snapXToGrid(ps.startX) : ps.startX;
+        var sNode = createNode(sx, ps.startY);
+        if (gridOn){ ensureGridStarted(); sNode.onGrid = true; sNode.gridStep = nearestGridStep(sx); }
+      }
+    }
+    pointerState = null;
+  });
+
+  clearBtn.addEventListener('click', function(){ clearSky(); });
+
+  // ---------- render loop ----------
+  function updateActiveVoices(){
+    if (!audioCtx) return;
+    var now = audioCtx.currentTime;
+    var barDur = GRID_STEPS * GRID_STEP_DUR;
+    for (var i = 0; i < nodes.length; i++){
+      var n = nodes[i];
+      if (!n.active) continue;
+      if (n.onGrid && gridStartTime !== null){
+        var barPos = (now - gridStartTime) % barDur;
+        var currentStep = Math.floor(barPos / GRID_STEP_DUR);
+        var currentBar = Math.floor((now - gridStartTime) / barDur);
+        if (currentStep === n.gridStep && currentBar !== n.lastFiredBar){
+          triggerNode(n);
+          n.lastFiredBar = currentBar;
+        }
+      } else if (now >= n.nextPlayAt){
+        triggerNode(n);
+        n.nextPlayAt = now + n.cycleLength * (0.94 + Math.random() * 0.12);
+      }
+    }
+  }
+
+  function marqueeRect(){
+    if (!pointerState || pointerState.mode !== 'normal' || !pointerState.dragging || pointerState.dragNode || pointerState.drone) return null;
+    return {
+      x0: Math.min(pointerState.startX, pointerState.curX),
+      x1: Math.max(pointerState.startX, pointerState.curX),
+      y0: Math.min(pointerState.startY, pointerState.curY),
+      y1: Math.max(pointerState.startY, pointerState.curY)
+    };
+  }
+
+  function dronePreview(){
+    if (!pointerState || pointerState.mode !== 'normal' || !pointerState.dragging || pointerState.dragNode || !pointerState.drone) return null;
+    return {
+      x0: Math.min(pointerState.startX, pointerState.curX),
+      x1: Math.max(pointerState.startX, pointerState.curX),
+      y: (pointerState.startY + pointerState.curY) / 2
+    };
+  }
+
+  function drawDroneLine(x0, x1, y, color, alpha, thickness){
+    ctx.save();
+    ctx.shadowBlur = 14 * alpha;
+    ctx.shadowColor = hexToRgba(color, alpha);
+    ctx.strokeStyle = hexToRgba(color, alpha);
+    ctx.lineWidth = thickness;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x0, y);
+    ctx.lineTo(x1, y);
+    ctx.stroke();
+    ctx.restore();
+    ctx.beginPath();
+    ctx.fillStyle = hexToRgba(color, Math.min(alpha + 0.15, 1));
+    ctx.arc(x0, y, thickness * 0.9, 0, Math.PI * 2);
+    ctx.arc(x1, y, thickness * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Recomputed fresh each frame from the live schedule, so it always matches
+  // the audio even right after a resize changes the cycle mid-breath.
+  function droneVisualAlpha(drone){
+    if (!audioCtx) return 0;
+    if (!isFinite(drone.cycleLength)) return 1;
+    var shape = droneEnvelopeShape(drone.cycleLength);
+    var cyclePos = drone.cycleLength - (drone.nextPulseAt - audioCtx.currentTime);
+    cyclePos = ((cyclePos % drone.cycleLength) + drone.cycleLength) % drone.cycleLength;
+    var t;
+    if (cyclePos < shape.attack) t = cyclePos / shape.attack;
+    else if (cyclePos < shape.attack + shape.hold) t = 1;
+    else t = 1 - (cyclePos - shape.attack - shape.hold) / shape.release;
+    return mapRange(clamp(t, 0, 1), 0, 1, DRONE_FLOOR * 0.75, 1);
+  }
+
+  function isHighlighted(n, mq){
+    if (selectedNodes.indexOf(n) !== -1) return true;
+    return !!mq && n.x >= mq.x0 && n.x <= mq.x1 && n.y >= mq.y0 && n.y <= mq.y1;
+  }
+
+  // Ambient background hue drifts faster the more is currently sounding —
+  // a quiet reading of "how busy" the piece is, kept subtle by a low alpha.
+  var bgHue = 235;
+  var lastBgTime = performance.now();
+  function updateBackgroundHue(now){
+    var dt = Math.min((now - lastBgTime) / 1000, 0.1);
+    lastBgTime = now;
+    var busy = drones.length;
+    for (var i = 0; i < nodes.length; i++) if (nodes[i].active) busy++;
+    var speed = mapRange(clamp(busy, 0, 10), 0, 10, 0.4, 7); // degrees per second
+    bgHue = (bgHue + speed * dt) % 360;
+  }
+
+  function drawBackground(){
+    var grad = ctx.createRadialGradient(W / 2, H * 0.4, 0, W / 2, H * 0.4, Math.max(W, H) * 0.8);
+    grad.addColorStop(0, 'hsla(' + bgHue + ', 45%, 9%, 0.4)');
+    grad.addColorStop(1, 'hsla(' + bgHue + ', 45%, 4%, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function drawGrid(){
+    if (!gridOn) return;
+    ctx.lineWidth = 1;
+    for (var i = 0; i < GRID_STEPS; i++){
+      var gx = gridColumnX(i);
+      // Every fourth column is a quarter-note downbeat — brighter, so a
+      // four-on-the-floor pattern is something you can see as well as hear.
+      ctx.strokeStyle = (i % 4 === 0) ? 'rgba(232,236,245,0.22)' : 'rgba(232,236,245,0.08)';
+      ctx.beginPath();
+      ctx.moveTo(gx, 0);
+      ctx.lineTo(gx, H);
+      ctx.stroke();
+    }
+    if (gridStartTime !== null && audioCtx){
+      // A playhead on the current step, so the bar reads at a glance.
+      var step = Math.floor(((audioCtx.currentTime - gridStartTime) % (GRID_STEPS * GRID_STEP_DUR)) / GRID_STEP_DUR);
+      var px = gridColumnX(clamp(step, 0, GRID_STEPS - 1));
+      ctx.strokeStyle = 'rgba(232,236,245,0.34)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, H);
+      ctx.stroke();
+    }
+  }
+
+  function draw(now){
+    ctx.clearRect(0, 0, W, H);
+    if (!paused) updateBackgroundHue(now);
+    drawBackground();
+    drawGrid();
+    var mq = marqueeRect();
+
+    // nodes
+    for (var j = 0; j < nodes.length; j++){
+      var n = nodes[j];
+      var pulse = clamp(1 - (now - n.lastTrigger) / (320 * n.sustainMult), 0, 1);
+      var breathe = n.active ? (Math.sin(now / 900 + n.id) * 0.5 + 0.5) : 0;
+      var glowR = n.radius + pulse * 12 + breathe * 5 + 6;
+      var volShine = clamp(mapRange(n.volume, 0, 2, 0.35, 1.3), 0.35, 1.3);
+
+      var grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, glowR);
+      grad.addColorStop(0, hexToRgba(n.color, (0.35 + pulse * 0.35 + breathe * 0.15) * volShine));
+      grad.addColorStop(1, hexToRgba(n.color, 0));
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (n.active){
+        ctx.beginPath();
+        ctx.strokeStyle = hexToRgba(n.color, 0.4 + breathe * 0.3);
+        ctx.lineWidth = 1.4;
+        ctx.arc(n.x, n.y, n.radius + 6 + breathe * 2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      if (n.grain > 0.02){
+        var specks = Math.round(n.grain * 9);
+        for (var s = 0; s < specks; s++){
+          var ang = Math.random() * Math.PI * 2;
+          var rr = n.radius + 5 + Math.random() * (8 + n.grain * 10);
+          ctx.beginPath();
+          ctx.fillStyle = hexToRgba(n.color, 0.15 + Math.random() * 0.35 * n.grain);
+          ctx.arc(n.x + Math.cos(ang) * rr, n.y + Math.sin(ang) * rr, 0.6 + Math.random() * 1.1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      var coreSize = n.radius * (1 + pulse * 0.25);
+      ctx.fillStyle = hexToRgba(n.color, clamp(0.92 * volShine, 0.25, 1));
+      if (n.kind === 'drum'){
+        // Each voice gets its own silhouette so a pattern is readable at a
+        // glance: square kick, triangular snare, small diamond hat.
+        var ds = Math.max(coreSize * DRUMS[n.drumIdx].sizeScale, 5);
+        if (n.drumIdx === 1) trianglePath(n.x, n.y, ds);
+        else if (n.drumIdx === 2) diamondPath(n.x, n.y, ds);
+        else roundedSquarePath(n.x, n.y, ds, 3);
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, coreSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.arc(n.x - n.radius * 0.28, n.y - n.radius * 0.28, n.radius * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (isHighlighted(n, mq)){
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(232,236,245,0.75)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.arc(n.x, n.y, n.radius + 9, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    if (mq){
+      ctx.fillStyle = 'rgba(232,236,245,0.05)';
+      ctx.fillRect(mq.x0, mq.y0, mq.x1 - mq.x0, mq.y1 - mq.y0);
+      ctx.strokeStyle = 'rgba(232,236,245,0.4)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(mq.x0, mq.y0, mq.x1 - mq.x0, mq.y1 - mq.y0);
+      ctx.setLineDash([]);
+    }
+
+    // live drone preview while dragging
+    var dp = dronePreview();
+    if (dp && dp.x1 - dp.x0 > 2){
+      drawDroneLine(dp.x0, dp.x1, dp.y, TIMBRES[selectedTimbreIdx].color, 0.55, 3);
+    }
+
+    // sounding drones — persist until deleted; glow follows the live pulse cycle
+    for (var k = drones.length - 1; k >= 0; k--){
+      var dr = drones[k];
+      var a = droneVisualAlpha(dr);
+      drawDroneLine(dr.x0, dr.x1, dr.y, dr.color, a * 0.85, 3 + a * 2);
+    }
+  }
+
+  function hexToRgba(hex, a){
+    var r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+  }
+
+  function trianglePath(cx, cy, half){
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - half * 1.15);
+    ctx.lineTo(cx + half * 1.05, cy + half * 0.85);
+    ctx.lineTo(cx - half * 1.05, cy + half * 0.85);
+    ctx.closePath();
+  }
+
+  function diamondPath(cx, cy, half){
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - half * 1.25);
+    ctx.lineTo(cx + half * 1.25, cy);
+    ctx.lineTo(cx, cy + half * 1.25);
+    ctx.lineTo(cx - half * 1.25, cy);
+    ctx.closePath();
+  }
+
+  function roundedSquarePath(cx, cy, half, corner){
+    var r = Math.min(corner, half);
+    ctx.beginPath();
+    ctx.moveTo(cx - half + r, cy - half);
+    ctx.lineTo(cx + half - r, cy - half);
+    ctx.arcTo(cx + half, cy - half, cx + half, cy - half + r, r);
+    ctx.lineTo(cx + half, cy + half - r);
+    ctx.arcTo(cx + half, cy + half, cx + half - r, cy + half, r);
+    ctx.lineTo(cx - half + r, cy + half);
+    ctx.arcTo(cx - half, cy + half, cx - half, cy + half - r, r);
+    ctx.lineTo(cx - half, cy - half + r);
+    ctx.arcTo(cx - half, cy - half, cx - half + r, cy - half, r);
+    ctx.closePath();
+  }
+
+  var lastPhysicsTime = performance.now();
+  function tick(now){
+    if (!paused){
+      var dt = Math.min((now - lastPhysicsTime) / 1000, 0.05);
+      lastPhysicsTime = now;
+      updatePhysics(dt);
+      updateActiveVoices();
+      updateDrones();
+    }
+    draw(now);
+    requestAnimationFrame(tick);
+  }
+
+  requestAnimationFrame(tick);
+})();
+</script>
+
+</body>
+</html>
